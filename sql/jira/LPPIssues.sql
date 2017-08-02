@@ -6,12 +6,15 @@ SELECT
     issueVersions.versions AS 'issueVersions',
     supportOffice.SupportOffice,
     lesaTicketRef.LESA_TicketReference,
-    SUBSTRING_INDEX(lesaTicketRef.LESA_TicketReference, '-', 1) as 'LESA_accountCodeReference',
-	issueFixedIn.issueFixedIn
+    SUBSTRING_INDEX(lesaTicketRef.LESA_TicketReference, '-', 1) AS 'LESA_accountCodeReference',
+	issueFixedIn.issueFixedIn,
+    IFNULL(issuesReopenedSubQuery.countReopened,0)
+
 FROM
     (SELECT 
         project_key.PROJECT_KEY,
             jiraissue.project,
+            jiraissue.ID AS 'jiraIssueId',
             jiraissue.issuenum,
             issuetype.pname AS 'issueType',
             issuestatus.pname AS 'issueStatus',
@@ -27,8 +30,8 @@ FROM
             jiraissue.resolutiondate,
             jiraissue.votes,
             jiraissue.watches,
-            priority.pname as 'priority',
-            resolution.pname as 'resolution'
+            priority.pname AS 'priority',
+            resolution.pname AS 'resolution'
     FROM
         jira.jiraissue
     INNER JOIN jira.project_key ON jiraissue.PROJECT = project_key.PROJECT_ID
@@ -37,15 +40,16 @@ FROM
     LEFT JOIN jira.nodeassociation na ON jiraissue.ID = na.source_node_id
     LEFT JOIN jira.component ON na.SINK_NODE_ID = component.id
     LEFT JOIN jira.projectversion ON na.SINK_NODE_ID = projectversion.id
-    LEFT JOIN jira.resolution on resolution.id=jiraissue.resolution
-    LEFT JOIN jira.priority on priority.id=jiraissue.priority
+    LEFT JOIN jira.resolution ON resolution.id=jiraissue.resolution
+    LEFT JOIN jira.priority ON priority.id=jiraissue.priority
     WHERE
         project_key.project_key = 'LPP'
         and jiraissue.created>='2013-01-01%'
             AND na.ASSOCIATION_TYPE = 'IssueComponent'
     GROUP BY jiraissue.issuenum
     ORDER BY jiraissue.issuenum DESC) AS issuesummary
-        LEFT JOIN
+
+LEFT JOIN
     (SELECT 
         jiraissue.issuenum,
             GROUP_CONCAT(projectversion.vname) AS 'versions'
@@ -92,7 +96,8 @@ FROM
         jiraissue.project = 11172
             AND cfname IN ('Support Office') 
 	) AS supportOffice ON issuesummary.issuenum = supportOffice.issuenum
-left join
+
+LEFT JOIN
 (
     SELECT 
         jiraissue.issuenum,
@@ -107,9 +112,10 @@ left join
         jiraissue.project = 11172
         and
         cfname IN ('LESA Permalink')
-) as lesaTicketRef
-    on lesaTicketRef.issuenum=issuesummary.issuenum
-left join
+) AS lesaTicketRef
+    ON lesaTicketRef.issuenum=issuesummary.issuenum
+
+LEFT JOIN
 (
     SELECT 
         jiraissue.issuenum,
@@ -124,5 +130,22 @@ left join
         jiraissue.project = 11172
         and
         cfname IN ('Issue Fixed In')
-) as issueFixedIn
-    on issueFixedIn.issuenum=issuesummary.issuenum
+) AS issueFixedIn
+    ON issueFixedIn.issuenum=issuesummary.issuenum
+
+LEFT JOIN 
+    (SELECT 
+        jiraissue.ID AS 'jiraIssueId',
+        COUNT(jiraissue.ID) AS 'countReopened'
+    FROM jira.changegroup
+        LEFT JOIN jira.changeitem ON changegroup.ID = changeitem.groupid
+        INNER JOIN jira.jiraissue ON changegroup.issueid = jiraissue.ID
+    WHERE changeitem.NEWVALUE = 4
+        AND changeitem.field = 'status'
+        AND jiraissue.PROJECT = 11172
+    GROUP BY changegroup.issueid
+) AS issuesReopenedSubQuery
+    ON issuesReopenedSubQuery.jiraIssueId = issuesummary.jiraIssueId
+GROUP BY issuesummary.jiraIssueId
+
+
