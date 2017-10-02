@@ -1,0 +1,6 @@
+select fl.name, fli.fieldidentifier
+FROM fieldlayoutitem fli
+JOIN fieldlayout fl
+  ON fli.fieldlayout = fl.ID
+WHERE fli.isrequired = "true"
+ORDER by fl.name asc, fli.fieldidentifier asc;
